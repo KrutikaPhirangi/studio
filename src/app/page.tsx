@@ -52,9 +52,9 @@ export default function KafLookPage() {
           description: `No topics found for the '${env}' environment.`,        
         variant: "destructive",
       });
-    } finally {
-      setIsTopicsLoading(false);
-    }
+    } 
+    setIsTopicsLoading(false);
+    
   }, [toast]);
 
 const fetchMessages = useCallback(async (topic: string) => {
@@ -73,9 +73,9 @@ const fetchMessages = useCallback(async (topic: string) => {
         description: `Could not fetch messages for topic '${topic}'.`,
         variant: "destructive",
       });
-    } finally {
-      setIsMessagesLoading(false);
-    }
+    } 
+    setIsMessagesLoading(false);
+    
   }, [toast]);
 
   // Initial fetch
