@@ -1,3 +1,5 @@
+import { Kafka, KafkaConfig } from 'kafkajs';
+
 /**
  * Represents the connection status to a Kafka broker.
  */
@@ -28,124 +30,89 @@ export interface KafkaMessage {
   content: string | Record<string, any>;
 }
 
-// Helper function to simulate network delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Global variable to hold the Kafka client instance
+let kafkaClient: Kafka | null = null;
 
-// Simulate occasional errors
-const shouldSimulateError = (probability = 0.1) => Math.random() < probability;
+// Function to connect to Kafka
+export async function connectToKafka(brokers: string[], config?: KafkaConfig): Promise<Kafka> {
+  if(kafkaClient)
+  {
+    return kafkaClient;
+  }
 
+  try {
+    if (!brokers || brokers.length === 0) {
+      throw new Error("No Kafka brokers provided.");
+    }
 
-/**
- * Asynchronously retrieves the connection status to the Kafka broker.
- * Simulates network delay and potential errors.
- *
- * @returns A promise that resolves to a KafkaConnectionStatus object.
- */
+    kafkaClient = new Kafka({
+        clientId: 'my-app',
+        brokers: brokers, // Your broker addresses
+        ...config,
+    });
+   // Check if it got connected
+   await kafkaClient.producer().connect();
+   await kafkaClient.admin().connect();
+   console.log('Kafka connected successfully!');
+
+    return kafkaClient;
+  } catch (error) {
+    console.error("Error connecting to Kafka:", error);
+    kafkaClient = null; // Reset on error
+    throw error; // Re-throw to be handled by the caller
+  }
+}
+
+// Function to get Kafka connection status
 export async function getKafkaConnectionStatus(): Promise<KafkaConnectionStatus> {
-  await delay(Math.random() * 500 + 200); // Simulate 200-700ms delay
-
-  if (shouldSimulateError(0.05)) { // 5% chance of connection error
-    console.error("Simulating Kafka connection error");
-    throw new Error("Simulated connection error: Could not reach Kafka broker.");
-  }
-
-  // Simulate connection status (e.g., 90% chance of being connected)
-  const isConnected = Math.random() > 0.1;
-  return {
-    isConnected,
-  };
+    if (kafkaClient) {
+      return { isConnected: true };
+    } else {
+       throw new Error("Not Connected to Kafka cluster");
+    }
 }
 
-/**
- * Asynchronously retrieves a list of Kafka topics for a given environment.
- * Simulates network delay and potential errors.
- *
- * @param env The environment to filter topics by (e.g., 'dev', 'sandbox').
- * @returns A promise that resolves to an array of KafkaTopic objects.
- */
+// Function to get Kafka topics
 export async function getKafkaTopics(env: string): Promise<KafkaTopic[]> {
-  await delay(Math.random() * 800 + 300); // Simulate 300-1100ms delay
-
-  if (shouldSimulateError()) {
-    console.error("Simulating error fetching Kafka topics");
-    throw new Error(`Simulated error: Failed to list topics for env '${env}'.`);
+  if (!kafkaClient) {
+    throw new Error(`Not connected to Kafka, cant get topics for : ${env}`);
   }
 
-  // Simulate different topics based on environment
-  let baseTopics: string[] = [];
-  if (env === 'dev') {
-      baseTopics = ['orders', 'customers', 'payments', 'inventory_updates', 'user_signups', 'product_views'];
-  } else if (env === 'sandbox') {
-      baseTopics = ['test_orders', 'sandbox_users', 'mock_payments'];
-  } else {
-      // Default or handle other environments
-      baseTopics = ['generic_events', 'system_logs'];
+  try {
+    const admin = kafkaClient.admin();
+    const topics = await admin.listTopics();
+
+    // Check if any topics were found
+    if (topics.length === 0) {
+      throw new Error("No topics found in the Kafka cluster.");
+    }
+
+    return topics.map(topic => ({ name: `${env}.${topic}` }));
+  } catch (error) {
+    console.error(`Error getting Kafka topics for ${env}:`, error);
+    throw error;
   }
+}
+// Function to get Kafka messages
+// Function to get Kafka messages (using kafkajs)
 
-  // Simulate some environments having no topics
-  if (env === 'empty_env_example') {
-      return [];
-  }
+async function getKafkaMessages(topic: string, count: number): Promise<KafkaMessage[]> {
+    if (!kafkaClient) {
+        throw new Error(`Not connected to Kafka, cant get messages for : ${topic}`);
+      }
+      const consumer = kafkaClient.consumer({ groupId: 'my-group' });
+      await consumer.connect();
+      await consumer.subscribe({ topic: topic, fromBeginning: true });
+      let messages:KafkaMessage[] = []
+        await consumer.run({
+            eachMessage: async ({ message }) => {
+                // Process each message
+                if(messages.length<count)
+                    messages.push({content:message.value?.toString() || ""})
+            },
+        });
 
-
-  return baseTopics.map(topic => ({
-    name: `${env}.${topic}`,
-  }));
+        return messages;
 }
 
-/**
- * Asynchronously retrieves the latest N messages from a specific Kafka topic.
- * Simulates network delay, potential errors, and different message formats.
- *
- * @param topic The name of the Kafka topic.
- * @param count The number of messages to retrieve.
- * @returns A promise that resolves to an array of KafkaMessage objects.
- */
-export async function getKafkaMessages(topic: string, count: number): Promise<KafkaMessage[]> {
-   await delay(Math.random() * 1000 + 500); // Simulate 500-1500ms delay
 
-   if (shouldSimulateError()) {
-    console.error("Simulating error fetching Kafka messages");
-    throw new Error(`Simulated error: Failed to fetch messages for topic '${topic}'.`);
-  }
-
-   // Simulate no messages for some topics
-   if (topic.includes('empty_topic_example')) {
-     return [];
-   }
-
-   return Array.from({ length: count }, (_, i) => {
-     // Simulate different message formats (JSON vs plain string)
-     const isJson = Math.random() > 0.3; // 70% chance of JSON
-     let content: string | Record<string, any>;
-
-     if (isJson) {
-       content = {
-         id: `msg_${topic}_${Date.now()}_${i}`,
-         timestamp: new Date().toISOString(),
-         user_id: `user_${Math.floor(Math.random() * 1000)}`,
-         payload: {
-           details: `Event detail ${i + 1} for ${topic}`,
-           value: Math.random() * 100,
-           status: ['pending', 'processed', 'failed'][Math.floor(Math.random() * 3)],
-         },
-         metadata: {
-           source: 'kafkalook-simulator',
-           partition: Math.floor(Math.random() * 3),
-           offset: 1000 + i,
-         }
-       };
-       // Convert JSON object to string for display in <pre> tag
-       try {
-        content = JSON.stringify(content, null, 2); // Pretty print JSON
-       } catch (e) {
-        content = "{ \"error\": \"Failed to stringify JSON content\" }";
-       }
-
-     } else {
-       content = `Simple message ${i + 1}: This is a plain text event from topic ${topic} at ${new Date().toLocaleTimeString()}`;
-     }
-
-     return { content };
-   });
-}
