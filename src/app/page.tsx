@@ -55,7 +55,7 @@ export default function KafLookPage() {
     } finally {
       setIsTopicsLoading(false);
     }
-  }, [toast,setTopics]);
+  }, [toast]);
 
 const fetchMessages = useCallback(async (topic: string) => {
     if (!topic) return;
@@ -91,14 +91,15 @@ const fetchMessages = useCallback(async (topic: string) => {
         fetchData()
   }, []);
 
-   useEffect(() => {fetchTopics(selectedEnv);}, [selectedEnv]);
+   useEffect(() => {fetchTopics(selectedEnv);}, [selectedEnv,fetchTopics]);
+   useEffect(() => {
     if (selectedTopic) {
       fetchMessages(selectedTopic);
     } else {
       setMessages([]); // Clear messages if no topic is selected
       setMessagesError(null);
     }
-  }, [selectedTopic, fetchMessages]);
+  }, [selectedTopic]);
   const handleSelectTopic = (topicName: string) => {
     setSelectedTopic(topicName);
   };
